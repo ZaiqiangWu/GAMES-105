@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
 def load_motion_data(bvh_file_path):
     """part2 辅助函数，读取bvh文件"""
     with open(bvh_file_path, 'r') as f:
@@ -9,14 +10,13 @@ def load_motion_data(bvh_file_path):
             if lines[i].startswith('Frame Time'):
                 break
         motion_data = []
-        for line in lines[i+1:]:
+        for line in lines[i + 1:]:
             data = [float(x) for x in line.split()]
             if len(data) == 0:
                 break
-            motion_data.append(np.array(data).reshape(1,-1))
+            motion_data.append(np.array(data).reshape(1, -1))
         motion_data = np.concatenate(motion_data, axis=0)
     return motion_data
-
 
 
 def part1_calculate_T_pose(bvh_file_path):
@@ -30,10 +30,33 @@ def part1_calculate_T_pose(bvh_file_path):
     Tips:
         joint_name顺序应该和bvh一致
     """
-    joint_name = None
-    joint_parent = None
-    joint_offset = None
-    return joint_name, joint_parent, joint_offset
+    joint_name = []
+    joint_parent = []
+    joint_offset = []
+    with open(bvh_file_path, 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            if line.split()[0] == 'JOINT' or line.split()[0] == 'ROOT':
+                joint_name.append(line.split()[1])
+            elif line.split()[0] == 'End':
+                joint_name.append(joint_name[-1] + '_end')
+        for line in lines:
+            if line.split()[0] == 'OFFSET':
+                joint_offset.append([line.split()[k] for k in range(1, 4)])
+        id_dict={}
+        for i in range(len(joint_name)):
+            id_dict[joint_name[i]]=i
+        current_parent = [-1,]
+        current_id=-1
+        for line in lines:
+            if line.split()[0] == 'JOINT' or line.split()[0] == 'ROOT' or line.split()[0] == 'End':
+                joint_parent.append(current_parent[-1])
+                current_id+=1
+            elif line.split()[0] == '{':
+                current_parent.append(current_id)
+            elif line.split()[0] == '}':
+                current_parent.pop()
+    return joint_name, joint_parent, np.array(joint_offset).astype(np.float64)
 
 
 def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data, frame_id):
@@ -49,6 +72,7 @@ def part2_forward_kinematics(joint_name, joint_parent, joint_offset, motion_data
     """
     joint_positions = None
     joint_orientations = None
+    print(motion_data)
     return joint_positions, joint_orientations
 
 
