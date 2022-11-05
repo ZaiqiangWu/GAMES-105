@@ -47,7 +47,22 @@ class MetaData:
         return path, path_name, path1, path2
     
 
+def part2_test(viewer):
+    target_pos = [0.5, 1.5, 0.2]
+    viewer.create_marker(target_pos, [1, 0, 0, 1])
+    joint_name, joint_parent, joint_initial_position = viewer.get_meta_data()
+    meta_data = MetaData(joint_name, joint_parent, joint_initial_position, 'lShoulder',
+                         'lWrist')  # 'RootJoint', 'lWrist_end')
 
+    joint_position = viewer.get_joint_positions()
+    joint_orientation = viewer.get_joint_orientations()
+
+    joint_position, joint_orientation = part1_inverse_kinematics(meta_data, joint_position, joint_orientation,
+                                                                 target_pos)
+    #print(joint_position[0])
+    viewer.show_pose(joint_name, joint_position, joint_orientation)
+    viewer.run()
+    pass
 
 def part1_simple(viewer, target_pos):
     """
@@ -56,10 +71,12 @@ def part1_simple(viewer, target_pos):
     viewer.create_marker(target_pos, [1, 0, 0, 1])
     joint_name, joint_parent, joint_initial_position = viewer.get_meta_data()
     meta_data = MetaData(joint_name, joint_parent, joint_initial_position, 'RootJoint', 'lWrist_end')
+
     joint_position = viewer.get_joint_positions()
     joint_orientation = viewer.get_joint_orientations()
     
     joint_position, joint_orientation = part1_inverse_kinematics(meta_data, joint_position, joint_orientation, target_pos)
+
     viewer.show_pose(joint_name, joint_position, joint_orientation)
     viewer.run()
     pass
@@ -166,16 +183,17 @@ def bonus(viewer, left_target_pos, right_target_pos):
 
 def main():
     viewer = SimpleViewer()
-    
+
     # part1
-    # part1_simple(viewer, np.array([0.5, 0.75, 0.5]))
-    # part1_hard(viewer, np.array([0.5, 0.5, 0.5]))
-    # part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
+    #part1_simple(viewer, np.array([0.5, 0.75, 0.5]))
+    #part1_hard(viewer, np.array([0.5, 0.5, 0.5]))
+    #part1_animation(viewer, np.array([0.5, 0.5, 0.5]))
     
     # part2
-    # part2(viewer, 'data/walk60.bvh')
+    #part2_test(viewer)
+    #part2(viewer, 'data/walk60.bvh')
     
-    # bonus(viewer, np.array([0.5, 0.5, 0.5]), np.array([0, 0.5, 0.5]))
+    bonus(viewer, np.array([0.5, 0.5, 0.5]), np.array([0, 0.5, 0.5]))
 
 if __name__ == "__main__":
     main()
