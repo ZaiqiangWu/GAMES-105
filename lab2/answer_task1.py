@@ -2,6 +2,8 @@ import numpy as np
 import copy
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+
+
 # ------------- lab1里的代码 -------------#
 def load_meta_data(bvh_path):
     with open(bvh_path, 'r') as f:
@@ -33,7 +35,7 @@ def load_meta_data(bvh_path):
                 parent_stack.pop()
 
             elif 'OFFSET' in line:
-                joint_offsets[-1] = np.array([float(x) for x in line.split()[-3:]]).reshape(1,3)
+                joint_offsets[-1] = np.array([float(x) for x in line.split()[-3:]]).reshape(1, 3)
 
             elif 'CHANNELS' in line:
                 trans_order = []
@@ -45,14 +47,15 @@ def load_meta_data(bvh_path):
                     if 'rotation' in token:
                         rot_order.append(token[0])
 
-                channels[-1] = ''.join(trans_order)+ ''.join(rot_order)
+                channels[-1] = ''.join(trans_order) + ''.join(rot_order)
 
             elif 'Frame Time:' in line:
                 break
-        
-    joint_parents = [-1]+ [joints.index(i) for i in joint_parents[1:]]
+
+    joint_parents = [-1] + [joints.index(i) for i in joint_parents[1:]]
     channels = [len(i) for i in channels]
     return joints, joint_parents, channels, joint_offsets
+
 
 def load_motion_data(bvh_path):
     with open(bvh_path, 'r') as f:
@@ -61,13 +64,14 @@ def load_motion_data(bvh_path):
             if lines[i].startswith('Frame Time'):
                 break
         motion_data = []
-        for line in lines[i+1:]:
+        for line in lines[i + 1:]:
             data = [float(x) for x in line.split()]
             if len(data) == 0:
                 break
-            motion_data.append(np.array(data).reshape(1,-1))
+            motion_data.append(np.array(data).reshape(1, -1))
         motion_data = np.concatenate(motion_data, axis=0)
     return motion_data
+
 
 # ------------- 实现一个简易的BVH对象，进行数据处理 -------------#
 
@@ -77,55 +81,56 @@ position, rotation表示局部平移和旋转
 translation, orientation表示全局平移和旋转
 '''
 
+
 class BVHMotion():
-    def __init__(self, bvh_file_name = None) -> None:
-        
+    def __init__(self, bvh_file_name=None) -> None:
+
         # 一些 meta data
         self.joint_name = []
         self.joint_channel = []
         self.joint_parent = []
-        
+
         # 一些local数据, 对应bvh里的channel, XYZposition和 XYZrotation
-        #! 这里我们把没有XYZ position的joint的position设置为offset, 从而进行统一
-        self.joint_position = None # (N,M,3) 的ndarray, 局部平移
-        self.joint_rotation = None # (N,M,4)的ndarray, 用四元数表示的局部旋转
-        
+        # ! 这里我们把没有XYZ position的joint的position设置为offset, 从而进行统一
+        self.joint_position = None  # (N,M,3) 的ndarray, 局部平移
+        self.joint_rotation = None  # (N,M,4)的ndarray, 用四元数表示的局部旋转
+
         if bvh_file_name is not None:
             self.load_motion(bvh_file_name)
         pass
-    
-    #------------------- 一些辅助函数 ------------------- #
+
+    # ------------------- 一些辅助函数 ------------------- #
     def load_motion(self, bvh_file_path):
         '''
             读取bvh文件，初始化元数据和局部数据
         '''
         self.joint_name, self.joint_parent, self.joint_channel, joint_offset = \
             load_meta_data(bvh_file_path)
-        
+
         motion_data = load_motion_data(bvh_file_path)
 
         # 把motion_data里的数据分配到joint_position和joint_rotation里
         self.joint_position = np.zeros((motion_data.shape[0], len(self.joint_name), 3))
         self.joint_rotation = np.zeros((motion_data.shape[0], len(self.joint_name), 4))
-        self.joint_rotation[:,:,3] = 1.0 # 四元数的w分量默认为1
-        
+        self.joint_rotation[:, :, 3] = 1.0  # 四元数的w分量默认为1
+
         cur_channel = 0
         for i in range(len(self.joint_name)):
             if self.joint_channel[i] == 0:
-                self.joint_position[:,i,:] = joint_offset[i].reshape(1,3)
-                continue   
+                self.joint_position[:, i, :] = joint_offset[i].reshape(1, 3)
+                continue
             elif self.joint_channel[i] == 3:
-                self.joint_position[:,i,:] = joint_offset[i].reshape(1,3)
-                rotation = motion_data[:, cur_channel:cur_channel+3]
+                self.joint_position[:, i, :] = joint_offset[i].reshape(1, 3)
+                rotation = motion_data[:, cur_channel:cur_channel + 3]
             elif self.joint_channel[i] == 6:
-                self.joint_position[:, i, :] = motion_data[:, cur_channel:cur_channel+3]
-                rotation = motion_data[:, cur_channel+3:cur_channel+6]
-            self.joint_rotation[:, i, :] = R.from_euler('XYZ', rotation,degrees=True).as_quat()
+                self.joint_position[:, i, :] = motion_data[:, cur_channel:cur_channel + 3]
+                rotation = motion_data[:, cur_channel + 3:cur_channel + 6]
+            self.joint_rotation[:, i, :] = R.from_euler('XYZ', rotation, degrees=True).as_quat()
             cur_channel += self.joint_channel[i]
-        
+
         return
 
-    def batch_forward_kinematics(self, joint_position = None, joint_rotation = None):
+    def batch_forward_kinematics(self, joint_position=None, joint_rotation=None):
         '''
         利用自身的metadata进行批量前向运动学
         joint_position: (N,M,3)的ndarray, 局部平移
@@ -135,23 +140,22 @@ class BVHMotion():
             joint_position = self.joint_position
         if joint_rotation is None:
             joint_rotation = self.joint_rotation
-        
+
         joint_translation = np.zeros_like(joint_position)
         joint_orientation = np.zeros_like(joint_rotation)
-        joint_orientation[:,:,3] = 1.0 # 四元数的w分量默认为1
-        
+        joint_orientation[:, :, 3] = 1.0  # 四元数的w分量默认为1
+
         # 一个小hack是root joint的parent是-1, 对应最后一个关节
         # 计算根节点时最后一个关节还未被计算，刚好是0偏移和单位朝向
-        
+
         for i in range(len(self.joint_name)):
             pi = self.joint_parent[i]
-            parent_orientation = R.from_quat(joint_orientation[:,pi,:]) 
+            parent_orientation = R.from_quat(joint_orientation[:, pi, :])
             joint_translation[:, i, :] = joint_translation[:, pi, :] + \
-                parent_orientation.apply(joint_position[:, i, :])
+                                         parent_orientation.apply(joint_position[:, i, :])
             joint_orientation[:, i, :] = (parent_orientation * R.from_quat(joint_rotation[:, i, :])).as_quat()
         return joint_translation, joint_orientation
-    
-    
+
     def adjust_joint_name(self, target_joint_name):
         '''
         调整关节顺序为target_joint_name
@@ -160,21 +164,20 @@ class BVHMotion():
         self.joint_name = [self.joint_name[i] for i in idx]
         self.joint_parent = [self.joint_parent[i] for i in idx]
         self.joint_channel = [self.joint_channel[i] for i in idx]
-        self.joint_position = self.joint_position[:,idx,:]
-        self.joint_rotation = self.joint_rotation[:,idx,:]
+        self.joint_position = self.joint_position[:, idx, :]
+        self.joint_rotation = self.joint_rotation[:, idx, :]
         pass
-    
+
     def raw_copy(self):
         '''
         返回一个拷贝
         '''
         return copy.deepcopy(self)
-    
+
     @property
     def motion_length(self):
         return self.joint_position.shape[0]
-    
-    
+
     def sub_sequence(self, start, end):
         '''
         返回一个子序列
@@ -182,10 +185,10 @@ class BVHMotion():
         end: 结束帧
         '''
         res = self.raw_copy()
-        res.joint_position = res.joint_position[start:end,:,:]
-        res.joint_rotation = res.joint_rotation[start:end,:,:]
+        res.joint_position = res.joint_position[start:end, :, :]
+        res.joint_rotation = res.joint_rotation[start:end, :, :]
         return res
-    
+
     def append(self, other):
         '''
         在末尾添加另一个动作
@@ -195,9 +198,9 @@ class BVHMotion():
         self.joint_position = np.concatenate((self.joint_position, other.joint_position), axis=0)
         self.joint_rotation = np.concatenate((self.joint_rotation, other.joint_rotation), axis=0)
         pass
-    
-    #--------------------- 你的任务 -------------------- #
-    
+
+    # --------------------- 你的任务 -------------------- #
+
     def decompose_rotation_with_yaxis(self, rotation):
         '''
         输入: rotation 形状为(4,)的ndarray, 四元数旋转
@@ -206,9 +209,13 @@ class BVHMotion():
         Ry = np.zeros_like(rotation)
         Rxz = np.zeros_like(rotation)
         # TODO: 你的代码
-        
+        # https://blog.csdn.net/lyyiangang/article/details/121929006
+        Rxyz = R.from_quat(rotation)
+        euler_yxz = Rxyz.as_euler('YXZ', True)
+        Ry = R.from_euler('Y', euler_yxz[0], True).as_quat()
+        Rxz = R.from_euler('XZ', [euler_yxz[1], euler_yxz[2]], True).as_quat()
         return Ry, Rxz
-    
+
     # part 1
     def translation_and_rotation(self, frame_num, target_translation_xz, target_facing_direction_xz):
         '''
@@ -223,14 +230,54 @@ class BVHMotion():
             你需要完成并使用decompose_rotation_with_yaxis
             输入的target_facing_direction_xz的norm不一定是1
         '''
-        
-        res = self.raw_copy() # 拷贝一份，不要修改原始数据
-        
+        print(frame_num)
+
+        res = self.raw_copy()  # 拷贝一份，不要修改原始数据
+
         # 比如说，你可以这样调整第frame_num帧的根节点平移
-        offset = target_translation_xz - res.joint_position[frame_num, 0, [0,2]]
-        res.joint_position[:, 0, [0,2]] += offset
+        offset = target_translation_xz - res.joint_position[frame_num, 0, [0, 2]]
+        res.joint_position[:, 0, [0, 2]] += offset
         # TODO: 你的代码
+
+        target_vector = np.array([target_facing_direction_xz[0], 0, target_facing_direction_xz[1]], np.float32)
+        target_vector /= np.linalg.norm(target_vector)
+        Ry_new = BVHMotion.rotation_matrix_from_vectors(np.array([0, 0, 1], np.float32), target_vector)
+
+        R_raw = res.joint_rotation[frame_num, 0, :]  # 第frame_num帧的朝向
+        Ry, Rxz = self.decompose_rotation_with_yaxis(R_raw)
+        Ry_new = Ry_new*R.from_quat(Ry).inv() #围绕y轴所需的旋转
+
+
+
+        for i in range(res.joint_rotation.shape[0]):
+            res.joint_rotation[i, 0, :] = (Ry_new*R.from_quat(res.joint_rotation[i, 0, :])).as_quat()
+
+
+        frame_num=(res.joint_position.shape[0]+frame_num)%res.joint_position.shape[0]
+        for idx in range(res.joint_position.shape[0]):
+            if idx==frame_num:
+                continue
+            res.joint_position[idx, 0, :] = res.joint_position[idx, 0, :] - res.joint_position[frame_num, 0, :]
+            res.joint_position[idx, 0, :] = (Ry_new).apply(res.joint_position[idx, 0, :])
+            res.joint_position[idx, 0, :] += res.joint_position[frame_num, 0, :]
+
         return res
+
+    @staticmethod
+    def rotation_matrix_from_vectors(vec1, vec2):
+        """ Find the rotation matrix that aligns vec1 to vec2
+        :param vec1: A 3d "source" vector
+        :param vec2: A 3d "destination" vector
+        :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+        """
+        a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+        v = np.cross(a, b)
+        c = np.dot(a, b)
+        s = np.linalg.norm(v)
+        kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+        return R.from_matrix(rotation_matrix)
+
 
 # part2
 def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
@@ -241,15 +288,16 @@ def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
     返回的动作应该有n3帧，第i帧由(1-alpha[i]) * bvh_motion1[j] + alpha[i] * bvh_motion2[k]得到
     i均匀地遍历0~n3-1的同时，j和k应该均匀地遍历0~n1-1和0~n2-1
     '''
-    
+
     res = bvh_motion1.raw_copy()
     res.joint_position = np.zeros((len(alpha), res.joint_position.shape[1], res.joint_position.shape[2]))
     res.joint_rotation = np.zeros((len(alpha), res.joint_rotation.shape[1], res.joint_rotation.shape[2]))
-    res.joint_rotation[...,3] = 1.0
+    res.joint_rotation[..., 3] = 1.0
 
     # TODO: 你的代码
-    
+
     return res
+
 
 # part3
 def build_loop_motion(bvh_motion):
@@ -261,9 +309,10 @@ def build_loop_motion(bvh_motion):
     Creating Looping Animations from Motion Capture
     '''
     res = bvh_motion.raw_copy()
-    
+
     from smooth_utils import build_loop_motion
     return build_loop_motion(res)
+
 
 # part4
 def concatenate_two_motions(bvh_motion1, bvh_motion2, mix_frame1, mix_time):
@@ -275,11 +324,10 @@ def concatenate_two_motions(bvh_motion1, bvh_motion2, mix_frame1, mix_time):
         你可能需要用到BVHMotion.sub_sequence 和 BVHMotion.append
     '''
     res = bvh_motion1.raw_copy()
-    
+
     # TODO: 你的代码
     # 下面这种直接拼肯定是不行的(
     res.joint_position = np.concatenate([res.joint_position[:-mix_time], bvh_motion2.joint_position], axis=0)
     res.joint_rotation = np.concatenate([res.joint_rotation[:-mix_time], bvh_motion2.joint_rotation], axis=0)
-    
-    return res
 
+    return res
