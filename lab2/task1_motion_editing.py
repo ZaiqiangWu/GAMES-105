@@ -62,8 +62,12 @@ def part2_interpolate(viewer, v):
     
     # 读取动作print(deltas[0])
     walk_forward = BVHMotion('motion_material/walk_forward.bvh')
+    #print(walk_forward.joint_name)
     run_forward = BVHMotion('motion_material/run_forward.bvh')
+    #print(run_forward.joint_name)
     run_forward.adjust_joint_name(walk_forward.joint_name)
+    #print(run_forward.joint_name)
+
     
     # 调整方向和位置, 对齐第一帧
     walk_forward = walk_forward.translation_and_rotation(0, np.array([0,0]), np.array([0,1]))
@@ -76,11 +80,16 @@ def part2_interpolate(viewer, v):
     distance = (1-blend_weight)*walk_forward.joint_position[-1,0,2] + blend_weight*run_forward.joint_position[-1,0,2]
     cycle_time = np.around(distance / v*60).astype(np.int32)
     alpha = np.ones((cycle_time,)) * blend_weight
+
+
     
     # 插值
     motion = blend_two_motions(walk_forward, run_forward, alpha)
     tanslation, orientation = motion.batch_forward_kinematics()
     task = ShowBVHUpdate(viewer, motion.joint_name, tanslation, orientation)
+
+
+
     viewer.addTask(task.update)
     pass
 
@@ -104,6 +113,7 @@ def part3_build_loop(viewer):
 def part4_concatenate(viewer, setting_id):
     if setting_id == 0:
         walk_forward = BVHMotion('motion_material/walkF.bvh')
+        #print(walk_forward.joint_position.shape[0])#182
         mix_time = 78 # 一个长motion,手动指定混合时间
     else:
         walk_forward = BVHMotion('motion_material/walk_forward.bvh')
@@ -135,10 +145,10 @@ def main():
     # 请自行取消需要的注释并更改测试setting_id
     # 请不要同时取消多个注释，否则前者会被后者覆盖
     
-    part1_translation_and_rotation(viewer, 2) # 数字代表不同的测试setting
-    # part2_interpolate(viewer, 1) # 数字代表不同期望的前进速度
-    # part3_build_loop(viewer)
-    # part4_concatenate(viewer, 0) # 数字代表不同的测试setting
+    #part1_translation_and_rotation(viewer, 2) # 数字代表不同的测试setting
+    #part2_interpolate(viewer, 1) # 数字代表不同期望的前进速度
+    #part3_build_loop(viewer)
+    part4_concatenate(viewer, 0) # 数字代表不同的测试setting
     viewer.run()
     
 if __name__ == '__main__':

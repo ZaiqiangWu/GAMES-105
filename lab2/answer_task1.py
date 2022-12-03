@@ -230,7 +230,7 @@ class BVHMotion():
             你需要完成并使用decompose_rotation_with_yaxis
             输入的target_facing_direction_xz的norm不一定是1
         '''
-        print(frame_num)
+        #print(frame_num)
 
         res = self.raw_copy()  # 拷贝一份，不要修改原始数据
 
@@ -245,17 +245,15 @@ class BVHMotion():
 
         R_raw = res.joint_rotation[frame_num, 0, :]  # 第frame_num帧的朝向
         Ry, Rxz = self.decompose_rotation_with_yaxis(R_raw)
-        Ry_new = Ry_new*R.from_quat(Ry).inv() #围绕y轴所需的旋转
 
-
+        Ry_new = Ry_new * R.from_quat(Ry).inv()  # 围绕y轴所需的旋转
 
         for i in range(res.joint_rotation.shape[0]):
-            res.joint_rotation[i, 0, :] = (Ry_new*R.from_quat(res.joint_rotation[i, 0, :])).as_quat()
+            res.joint_rotation[i, 0, :] = (Ry_new * R.from_quat(res.joint_rotation[i, 0, :])).as_quat()
 
-
-        frame_num=(res.joint_position.shape[0]+frame_num)%res.joint_position.shape[0]
+        frame_num = (res.joint_position.shape[0] + frame_num) % res.joint_position.shape[0]
         for idx in range(res.joint_position.shape[0]):
-            if idx==frame_num:
+            if idx == frame_num:
                 continue
             res.joint_position[idx, 0, :] = res.joint_position[idx, 0, :] - res.joint_position[frame_num, 0, :]
             res.joint_position[idx, 0, :] = (Ry_new).apply(res.joint_position[idx, 0, :])
@@ -270,6 +268,9 @@ class BVHMotion():
         :param vec2: A 3d "destination" vector
         :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
         """
+        if np.linalg.norm(vec1 - vec2) < 0.0001:
+            return R.from_matrix(np.eye(3))
+
         a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
         v = np.cross(a, b)
         c = np.dot(a, b)
@@ -277,6 +278,20 @@ class BVHMotion():
         kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
         rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
         return R.from_matrix(rotation_matrix)
+
+
+def slerp(v1, v2, t):
+    v1 /= np.linalg.norm(v1)
+    v2 /= np.linalg.norm(v2)
+    if np.linalg.norm(v1 - v2) < 0.0001:
+        return v1
+    # 解决插值绕远路的问题：https://blog.csdn.net/weixin_46477226/article/details/121258542
+    if np.dot(v1,v2)<0:
+        v1=-v1
+    alpha = np.arccos(np.dot(v1, v2))
+    result = np.sin((1 - t) * alpha) / np.sin(alpha) * v1 + np.sin(t * alpha) / np.sin(alpha) * v2
+    result /= np.linalg.norm(result)
+    return result
 
 
 # part2
@@ -295,7 +310,21 @@ def blend_two_motions(bvh_motion1, bvh_motion2, alpha):
     res.joint_rotation[..., 3] = 1.0
 
     # TODO: 你的代码
-
+    n1 = bvh_motion1.motion_length
+    n2 = bvh_motion2.motion_length
+    n3 = alpha.shape[0]
+    joint_num = res.joint_position.shape[1]
+    for i in range(n3):
+        j = np.round((i / (n3 - 1)) * (n1 - 1)).astype(np.int32)
+        k = np.round((i / (n3 - 1)) * (n2 - 1)).astype(np.int32)
+        res.joint_position[i, :, :] = (1 - alpha[i]) * bvh_motion1.joint_position[j, :, :] + alpha[
+            i] * bvh_motion2.joint_position[k, :, :]
+    for i in range(n3):
+        j = np.round((i / (n3 - 1)) * (n1 - 1)).astype(np.int32)
+        k = np.round((i / (n3 - 1)) * (n2 - 1)).astype(np.int32)
+        for joint in range(joint_num):
+            res.joint_rotation[i, joint, :] = slerp(bvh_motion1.joint_rotation[j, joint, :],
+                                                    bvh_motion2.joint_rotation[k, joint, :], alpha[i])
     return res
 
 
@@ -326,8 +355,22 @@ def concatenate_two_motions(bvh_motion1, bvh_motion2, mix_frame1, mix_time):
     res = bvh_motion1.raw_copy()
 
     # TODO: 你的代码
+    pos = bvh_motion1.joint_position[-1, 0, [0, 2]]
+    rot = bvh_motion1.joint_rotation[-1, 0]
+    facing_axis = R.from_quat(rot).apply(np.array([0, 0, 1])).flatten()[[0, 2]]
+    new_motion2 = bvh_motion2.translation_and_rotation(0, pos, facing_axis)
+    #l2 = new_motion2.motion_length
+    #l1 = res.motion_length
+    #print(l2,l1)
     # 下面这种直接拼肯定是不行的(
-    res.joint_position = np.concatenate([res.joint_position[:-mix_time], bvh_motion2.joint_position], axis=0)
-    res.joint_rotation = np.concatenate([res.joint_rotation[:-mix_time], bvh_motion2.joint_rotation], axis=0)
+    joint_num = res.joint_rotation.shape[1]
+    for i in range(mix_time):
+        t = i/mix_time
+        #k=np.round(i*l2/l1).astype(np.uint32)
+        new_motion2.joint_position[i] = t*new_motion2.joint_position[i] +(1-t)*res.joint_position[-mix_time+i]
+        for joint in range(joint_num):
+            new_motion2.joint_rotation[i,joint,:] = slerp(res.joint_rotation[-mix_time+i,joint,:],new_motion2.joint_rotation[i,joint,:],t)
+    res.joint_position = np.concatenate([res.joint_position[:-mix_time], new_motion2.joint_position], axis=0)
+    res.joint_rotation = np.concatenate([res.joint_rotation[:-mix_time], new_motion2.joint_rotation], axis=0)
 
     return res
